@@ -1,0 +1,14 @@
+const EMBEDDED_REGISTRY_JSON = [
+  {
+    "id": "nav-popups",
+    "name": "Navigation popups (live)",
+    "repo": "mcint/userscripts",
+    "path": "mw/nav-popups/popups.js",
+    "ref": "main",
+    "match": ["*://*.wikipedia.org/*"],
+    "runAt": "document-idle",
+    "grant": [],
+    "integrity": null,
+    "desc": "Wikipedia hover previews (maintained fork)"
+  }
+];
