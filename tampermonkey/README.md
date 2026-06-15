@@ -5,8 +5,12 @@ userscripts from GitHub: a curated `registry.json` (auto-loaded per-domain) plus
 freeform field (URL or pasted snippet). Integrity via SRI tokens.
 
 - **Install:** open `https://cdn.jsdelivr.net/gh/mcint/userscripts@main/tampermonkey/loader.user.js`
-- **Use:** Tampermonkey menu → `usLoader: load (prompt)` (freeform load),
-  `usLoader: list in console` (show registry), `usLoader: hash input` (SRI helper).
+- **Dock:** a ⚙ orb lower-right; hover to expand. Each script row shows a status
+  dot (`○` inactive / `●` active, red=error, yellow=warning) and `[tab] [session] [site]`
+  activation (session disabled for now). `window.usLoader` is available from
+  `document-start` (`activate(id,{scope})`, `deactivate`, `status`, `list`).
+- **Use:** Tampermonkey menu → `usLoader: open dock` (focus dock), `usLoader: list in console`
+  (show registry), `usLoader: hash input` (SRI helper).
   All commands also available via `usLoader.*` in devtools console.
 - **Config:** edit the `const` block at the top of `loader.user.js`
   (`REQUIRE_SRI`, `DEFAULT_OWNER`, `REGISTRY_URL`, `REGISTRY_TTL_MS`).
