@@ -171,6 +171,49 @@ function validateEntry(entry) {
   return { ok: errors.length === 0, errors };
 }
 
+// ---- impure helpers (GM/DOM — only called from main) --------------------
+
+function gmFetchText(url) {
+  return new Promise((resolve, reject) => {
+    GM_xmlhttpRequest({
+      method: 'GET', url,
+      onload: (r) => (r.status >= 200 && r.status < 300)
+        ? resolve(r.responseText)
+        : reject(new Error(`HTTP ${r.status} for ${url}`)),
+      onerror: () => reject(new Error(`network error for ${url}`)),
+    });
+  });
+}
+
+function executeText(text, label) {
+  const el = document.createElement('script');
+  el.textContent = `// userscripts-loader: ${label}\n${text}`;
+  (document.head || document.documentElement).appendChild(el);
+  el.remove();
+}
+
+// source: {kind, ...} from parseFreeform OR a registry entry coerced to {kind:'ref',...}
+async function loadSource(source, opts) {
+  const requireSri = REQUIRE_SRI || (opts && opts.requireSri);
+  let text, integrity, label;
+  if (source.kind === 'snippet') {
+    text = source.snippet; integrity = null; label = 'snippet';
+  } else {
+    const url = source.kind === 'url' ? source.url
+      : buildCdnUrl({ repo: source.repo, ref: source.ref || 'main', path: source.path });
+    label = url;
+    text = await gmFetchText(url);
+    integrity = source.integrity || (source.entry && source.entry.integrity) || null;
+  }
+  if (integrity) {
+    const ok = await verifyIntegrity(new TextEncoder().encode(text), integrity);
+    if (!ok) { throw new Error(`integrity mismatch: ${label}`); }
+  } else if (requireSri) {
+    throw new Error(`integrity required but absent: ${label}`);
+  }
+  executeText(text, label);
+}
+
 // ---- main (browser only) ------------------------------------------------
 function main() {
   // wired up by later tasks
