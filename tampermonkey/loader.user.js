@@ -24,7 +24,45 @@ const CDN_BASE = 'https://cdn.jsdelivr.net/gh';
 const REGISTRY_URL = 'https://cdn.jsdelivr.net/gh/mcint/userscripts@main/tampermonkey/registry.json';
 const REGISTRY_TTL_MS = 12 * 60 * 60 * 1000;
 
-// ---- pure helpers (filled in by later tasks) ----------------------------
+// ---- pure helpers -------------------------------------------------------
+
+function effectiveActive(scopes) {
+  return !!(scopes && (scopes.tab || scopes.session || scopes.site));
+}
+
+function activationKey(id) { return 'us-loader:act:' + id; }
+
+function readScopes(id, stores) {
+  const key = activationKey(id);
+  const on = (s) => !!(s && s.getItem(key) === '1');
+  return { tab: on(stores.tab), session: false, site: on(stores.site) };
+}
+
+function writeScope(id, scope, on, stores) {
+  if (scope === 'session') { return; } // v0: lever stubbed (see decision D6)
+  const store = scope === 'tab' ? stores.tab : scope === 'site' ? stores.site : null;
+  if (!store) { return; }
+  const key = activationKey(id);
+  if (on) { store.setItem(key, '1'); } else { store.removeItem(key); }
+}
+
+function deriveStatus(rt) {
+  if (rt && rt.error) { return 'error'; }
+  if (rt && rt.warning) { return 'warning'; }
+  if (rt && rt.loaded) { return 'active'; }
+  return 'inactive';
+}
+
+function statusGlyph(status) {
+  switch (status) {
+    case 'active': return { symbol: '●', cls: 'us-st-active' };
+    case 'error': return { symbol: '●', cls: 'us-st-error' };
+    case 'warning': return { symbol: '●', cls: 'us-st-warning' };
+    default: return { symbol: '○', cls: 'us-st-inactive' };
+  }
+}
+
+// ---- legacy section label -----------------------------------------------
 
 function buildCdnUrl({ repo, ref, path }) {
   const p = String(path).replace(/^\/+/, '');
@@ -323,6 +361,7 @@ if (typeof module !== 'undefined' && module.exports) {
     matchUrl,
     emptyState, applyEnabled, isEnabled, pushRecent,
     entriesToAutoLoad,
+    effectiveActive, activationKey, readScopes, writeScope, deriveStatus, statusGlyph,
   };
 } else {
   main();
