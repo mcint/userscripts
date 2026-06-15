@@ -127,6 +127,32 @@ function normalizeIntegrity(s) {
   return null;
 }
 
+function _matchOne(pattern, url) {
+  const m = pattern.match(/^([^:]+):\/\/([^/]*)(\/.*)$/);
+  if (!m) { return false; }
+  const [, scheme, host, path] = m;
+  const u = url.match(/^([^:]+):\/\/([^/]*)(\/.*)?$/);
+  if (!u) { return false; }
+  const [, uScheme, uHost, uPath = '/'] = u;
+
+  if (scheme === '*') {
+    if (uScheme !== 'http' && uScheme !== 'https') { return false; }
+  } else if (scheme !== uScheme) { return false; }
+
+  const hostRe = new RegExp('^' + host.split('*').map(_esc).join('.*') + '$');
+  if (!hostRe.test(uHost)) { return false; }
+
+  const pathRe = new RegExp('^' + path.split('*').map(_esc).join('.*') + '$');
+  return pathRe.test(uPath);
+}
+
+function _esc(s) { return s.replace(/[.+?^${}()|[\]\\]/g, '\\$&'); }
+
+function matchUrl(patterns, url) {
+  if (!Array.isArray(patterns)) { return false; }
+  return patterns.some((p) => _matchOne(p, url));
+}
+
 function parseRegistry(text) {
   const data = JSON.parse(text);
   if (!Array.isArray(data)) { throw new Error('registry must be a JSON array'); }
@@ -159,6 +185,7 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeIntegrity,
     computeSriToken, verifyIntegrity,
     parseRegistry, validateEntry,
+    matchUrl,
   };
 } else {
   main();
