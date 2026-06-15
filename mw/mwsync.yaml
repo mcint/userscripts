@@ -1,0 +1,12 @@
+wiki:
+  api_base: https://en.wikipedia.org/w/api.php
+  articles:
+    MediaWiki:Gadget-popups.js:
+      title: MediaWiki:Gadget-popups.js
+      url: https://en.wikipedia.org/wiki/MediaWiki:Gadget-popups.js
+      local: MediaWiki:Gadget-popups.js.mw
+      upstream_revid: 1322962085
+      upstream_timestamp: '2025-11-18T21:16:49Z'
+      upstream_editor: Pppery
+      upstream_summary: +oathauth-twofactorauth, -named
+      upstream_sha1: 042631ea14c85ac2ee0a3dc805c4e2605ba5a6f6

@@ -16,6 +16,9 @@ script is explicit.
 | [`scripts/`](scripts/) | The real deal: installable `*.user.js` with full `==UserScript==` headers | — (this is the shippable layer) |
 | [`samples/`](samples/) | Reference scripts (mine or others') kept to learn from — *not* meant to be installed as-is | — (study material) |
 | [`memory/`](memory/) | Notes: per-site quirks, DOM selectors that break, API gotchas, decisions | — (knowledge, not code) |
+| [`mw/`](mw/) | MediaWiki-sourced scripts/gadgets, tracked with [mwsync] so each page keeps its upstream revision history (e.g. Navigation popups) | — (mirror + history) |
+
+[mwsync]: https://github.com/mcint/mwsync
 
 A script lives in exactly one of `drafts/` or `scripts/`. The move between them
 is the "is this real yet?" boundary — same spirit as the seedbed→transplant
