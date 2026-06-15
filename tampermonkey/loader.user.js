@@ -241,9 +241,74 @@ async function loadSource(source, opts) {
   executeText(text, label);
 }
 
+// ---- registry + auto-load ------------------------------------------------
+
+function entriesToAutoLoad(entries, state, url) {
+  return entries.filter((e) => {
+    const defaultOn = matchUrl(e.match || [], url);
+    return defaultOn && isEnabled(state, e, true);
+  });
+}
+
+// embedded registry: present when build.sh has run (Task 15); else null.
+const EMBEDDED_REGISTRY = (typeof EMBEDDED_REGISTRY_JSON !== 'undefined') ? EMBEDDED_REGISTRY_JSON : null;
+
+async function getRegistry() {
+  const state = loadState();
+  const cache = state.registryCache;
+  const fresh = cache && (Date.now() - cache.fetchedAt) < REGISTRY_TTL_MS;
+  if (fresh) { return cache.entries; }
+  try {
+    const text = await gmFetchText(REGISTRY_URL);
+    const entries = parseRegistry(text);
+    saveState({ ...state, registryCache: { fetchedAt: Date.now(), entries } });
+    return entries;
+  } catch (_e) {
+    if (cache) { return cache.entries; }
+    return EMBEDDED_REGISTRY || [];
+  }
+}
+
+async function hashInput(input) {
+  const src = parseFreeform(input, { owner: DEFAULT_OWNER, ref: 'main' });
+  const text = src.kind === 'snippet' ? src.snippet
+    : await gmFetchText(src.kind === 'url' ? src.url
+      : buildCdnUrl({ repo: src.repo, ref: src.ref || 'main', path: src.path }));
+  return computeSriToken(new TextEncoder().encode(text), 'sha384');
+}
+
 // ---- main (browser only) ------------------------------------------------
 function main() {
-  // wired up by later tasks
+  getRegistry().then((entries) => {
+    const state = loadState();
+    // 1. auto-load matching + enabled entries
+    for (const e of entriesToAutoLoad(entries, state, location.href)) {
+      loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e })
+        .catch((err) => console.error('[loader]', e.id, err));
+    }
+    // 2. console API (devtools, with args) + prompt-based menu — the minimal
+    //    interactive surface; the on-page panel is a later phase (Task 12).
+    const api = {
+      list: () => entries.map((e) => ({ id: e.id, name: e.name, repo: e.repo, path: e.path })),
+      load: (input, opts) => loadSource(parseFreeform(input, { owner: DEFAULT_OWNER, ref: 'main' }), opts),
+      loadEntry: (id) => {
+        const e = entries.find((x) => x.id === id);
+        return e ? loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e })
+          : Promise.reject(new Error('no entry ' + id));
+      },
+      hashIt: (input) => hashInput(input),
+    };
+    (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).usLoader = api;
+    GM_registerMenuCommand('usLoader: load (prompt)', () => {
+      const v = prompt('owner/repo/path@ref, URL#sri, or paste snippet');
+      if (v) { api.load(v).catch((e) => alert('load failed: ' + e.message)); }
+    });
+    GM_registerMenuCommand('usLoader: list in console', () => console.table(api.list()));
+    GM_registerMenuCommand('usLoader: hash input', async () => {
+      const v = prompt('owner/repo/path@ref or URL to hash');
+      if (v) { prompt('SRI token (copy into registry.json "integrity"):', await api.hashIt(v)); }
+    });
+  });
 }
 
 // ---- export tail: Node tests require() this; browser runs main() --------
@@ -257,6 +322,7 @@ if (typeof module !== 'undefined' && module.exports) {
     parseRegistry, validateEntry,
     matchUrl,
     emptyState, applyEnabled, isEnabled, pushRecent,
+    entriesToAutoLoad,
   };
 } else {
   main();
