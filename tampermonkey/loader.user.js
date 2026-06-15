@@ -347,6 +347,71 @@ function deactivateScript(id) {
   _runtime[id] = { loaded: false };
 }
 
+// ---- dock DOM + styles (browser-only; called from main after DOM ready) -
+
+function injectDockStyles() {
+  if (document.getElementById('us-dock-style')) { return; }
+  const css = `
+  #us-dock{position:fixed;right:14px;bottom:14px;z-index:2147483647;font:13px/1.4 sans-serif}
+  #us-dock .us-orb{width:26px;height:26px;border-radius:50%;background:#222;color:#fff;display:flex;
+    align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.4)}
+  #us-dock .us-panel{display:none;background:#fff;color:#111;border:1px solid #999;border-radius:6px;
+    padding:8px;min-width:240px;box-shadow:0 2px 12px rgba(0,0,0,.3)}
+  #us-dock:hover .us-panel{display:block}
+  #us-dock:hover .us-orb{display:none}
+  #us-dock .us-row{display:flex;align-items:center;gap:6px;margin:3px 0}
+  #us-dock button{font:12px sans-serif;cursor:pointer}
+  #us-dock button[disabled]{opacity:.45;cursor:default}
+  .us-st-inactive{color:#999}.us-st-active{color:#1a7f37}.us-st-error{color:#cf222e}.us-st-warning{color:#bf8700}`;
+  const el = document.createElement('style'); el.id = 'us-dock-style'; el.textContent = css;
+  document.head.appendChild(el);
+}
+
+function renderDock(entries) {
+  injectDockStyles();
+  let dock = document.getElementById('us-dock');
+  if (dock) { dock.remove(); }
+  dock = document.createElement('div'); dock.id = 'us-dock';
+
+  const orb = document.createElement('div'); orb.className = 'us-orb'; orb.textContent = '⚙'; // ⚙
+  orb.title = 'userscripts';
+  const panel = document.createElement('div'); panel.className = 'us-panel';
+
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px';
+  const title = document.createElement('strong'); title.textContent = 'userscripts';
+  const close = document.createElement('button'); close.textContent = '×'; // ×
+  close.title = 'collapse'; close.onclick = () => { panel.style.display = 'none'; };
+  head.append(title, close); panel.append(head);
+
+  const stores = browserStores();
+  for (const e of entries) {
+    const scopes = readScopes(e.id, stores);
+    const st = deriveStatus(_runtime[e.id] || (effectiveActive(scopes) ? { loaded: true } : {}));
+    const g = statusGlyph(st);
+    const row = document.createElement('div'); row.className = 'us-row';
+    const dot = document.createElement('span'); dot.className = g.cls; dot.textContent = g.symbol;
+    const name = document.createElement('span'); name.textContent = e.name; name.style.flex = '1';
+    row.append(dot, name);
+    for (const scope of ['tab', 'session', 'site']) {
+      const b = document.createElement('button'); b.textContent = scope;
+      if (scope === 'session') { b.disabled = true; b.title = 'soon'; }
+      else {
+        if (scopes[scope]) { b.style.fontWeight = 'bold'; }
+        b.onclick = () => {
+          const cur = readScopes(e.id, stores)[scope];
+          if (cur) { writeScope(e.id, scope, false, stores); }
+          else { activateScript(e.id, scope, entries).catch((err) => console.error('[loader]', err)); }
+          renderDock(entries);
+        };
+      }
+      row.append(b);
+    }
+    panel.append(row);
+  }
+  dock.append(orb, panel); document.body.appendChild(dock);
+}
+
 // ---- main (browser only) ------------------------------------------------
 function main() {
   getRegistry().then((entries) => {
