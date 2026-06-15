@@ -14,3 +14,13 @@ freeform field (URL or pasted snippet). Integrity via SRI tokens.
 - **Phases & prior art:** see `refs/`.
 
 Design: `../docs/superpowers/specs/2026-06-15-tampermonkey-script-loader-design.md`
+
+## Distribution build
+
+`build.sh` writes `registry.embedded.js`. To ship a self-contained loader that
+works with zero network on a cold page, concatenate it ahead of the loader:
+
+    cat tampermonkey/registry.embedded.js tampermonkey/loader.user.js > dist/loader.user.js
+
+The loader detects `EMBEDDED_REGISTRY_JSON` and uses it as the fallback when the
+live `registry.json` fetch fails or before the first refresh.
