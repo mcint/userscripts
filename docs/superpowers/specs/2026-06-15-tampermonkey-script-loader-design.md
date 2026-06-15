@@ -102,8 +102,11 @@ The CDN URL is derived: `https://cdn.jsdelivr.net/gh/<repo>@<ref>/<path>`.
 ## 4. Load + execute
 
 1. **Source** — either a registry entry, a freeform **URL**, or a freeform
-   **pasted snippet**. URLs may carry the hash in the fragment:
-   `…popups.js#sha384-<base64>` (SRI token) or pip-style `…#sha256=<hex>`.
+   **pasted snippet**. The **SRI token** (`sha256|sha384|sha512-<base64>`) is the
+   single canonical integrity format — carried through unchanged from the registry
+   `integrity` field, to the URL fragment (`…popups.js#sha384-<base64>`), to a
+   `<script integrity>` attribute. Pip-style `#sha256=<hex>` is tolerated on input
+   only (normalised to a token); nothing emits it.
 2. **Fetch** — `GM_xmlhttpRequest` GET (bypasses page CSP that blocks external
    `<script>`; works cross-origin). Snippets skip fetch.
 3. **Integrity (SRI-ready)** — if an `integrity`/fragment hash is present, compute
