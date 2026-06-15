@@ -75,6 +75,48 @@ function parseFreeform(input, defaults) {
   return { kind: 'snippet', snippet: raw };
 }
 
+function _subtle() {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.subtle) {
+    return globalThis.crypto.subtle;
+  }
+  if (typeof require !== 'undefined') { return require('crypto').webcrypto.subtle; }
+  throw new Error('WebCrypto unavailable');
+}
+
+function _toB64(buf) {
+  const a = new Uint8Array(buf);
+  if (typeof Buffer !== 'undefined') { return Buffer.from(a).toString('base64'); }
+  let s = '';
+  for (let i = 0; i < a.length; i++) { s += String.fromCharCode(a[i]); }
+  return btoa(s);
+}
+
+function _toHex(buf) {
+  const a = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < a.length; i++) { s += a[i].toString(16).padStart(2, '0'); }
+  return s;
+}
+
+const _ALGO = { sha256: 'SHA-256', sha384: 'SHA-384', sha512: 'SHA-512' };
+
+async function computeSriToken(bytes, algo) {
+  const buf = await _subtle().digest(_ALGO[algo], bytes);
+  return `${algo}-${_toB64(buf)}`;
+}
+
+async function verifyIntegrity(bytes, token) {
+  const norm = normalizeIntegrity(token);
+  if (!norm) { return false; }
+  const hex = norm.endsWith('-hex');
+  const core = hex ? norm.slice(0, -4) : norm;
+  const algo = core.slice(0, core.indexOf('-'));
+  const expected = core.slice(algo.length + 1);
+  const buf = await _subtle().digest(_ALGO[algo], bytes);
+  const actual = hex ? _toHex(buf) : _toB64(buf);
+  return actual === expected;
+}
+
 function normalizeIntegrity(s) {
   if (!s) { return null; }
   const v = String(s).trim().replace(/^#/, '');
@@ -97,6 +139,7 @@ if (typeof module !== 'undefined' && module.exports) {
     buildCdnUrl, entryCdnUrl,
     parseFreeform,
     normalizeIntegrity,
+    computeSriToken, verifyIntegrity,
   };
 } else {
   main();
