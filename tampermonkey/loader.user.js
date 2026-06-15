@@ -315,6 +315,38 @@ async function hashInput(input) {
   return computeSriToken(new TextEncoder().encode(text), 'sha384');
 }
 
+// ---- storage binding + activation API (browser-only; called from main) --
+
+function browserStores() {
+  return { tab: (typeof sessionStorage !== 'undefined' ? sessionStorage : null),
+           site: (typeof localStorage !== 'undefined' ? localStorage : null) };
+}
+
+// runtime status of loaded scripts this page (id -> {loaded,error,warning})
+const _runtime = {};
+
+function scriptStatus(id) { return deriveStatus(_runtime[id] || {}); }
+
+async function activateScript(id, scope, entries) {
+  writeScope(id, scope || 'site', true, browserStores());
+  const e = entries.find((x) => x.id === id);
+  if (!e) { _runtime[id] = { error: true }; return; }
+  try {
+    await loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e });
+    _runtime[id] = { loaded: true };
+  } catch (err) {
+    _runtime[id] = { error: true };
+    throw err;
+  }
+}
+
+function deactivateScript(id) {
+  const stores = browserStores();
+  writeScope(id, 'tab', false, stores);
+  writeScope(id, 'site', false, stores);
+  _runtime[id] = { loaded: false };
+}
+
 // ---- main (browser only) ------------------------------------------------
 function main() {
   getRegistry().then((entries) => {
