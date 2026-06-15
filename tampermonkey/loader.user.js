@@ -35,6 +35,16 @@ function entryCdnUrl(entry) {
   return buildCdnUrl({ repo: entry.repo, ref: entry.ref || 'main', path: entry.path });
 }
 
+function normalizeIntegrity(s) {
+  if (!s) { return null; }
+  const v = String(s).trim().replace(/^#/, '');
+  let m = v.match(/^(sha256|sha384|sha512)-(.+)$/);
+  if (m) { return `${m[1]}-${m[2]}`; }
+  m = v.match(/^(sha256|sha384|sha512)=([0-9a-fA-F]+)$/);
+  if (m) { return `${m[1]}-${m[2].toLowerCase()}-hex`; }
+  return null;
+}
+
 // ---- main (browser only) ------------------------------------------------
 function main() {
   // wired up by later tasks
@@ -45,6 +55,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     REQUIRE_SRI, DEFAULT_OWNER, CDN_BASE,
     buildCdnUrl, entryCdnUrl,
+    normalizeIntegrity,
   };
 } else {
   main();
