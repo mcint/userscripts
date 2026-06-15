@@ -171,7 +171,34 @@ function validateEntry(entry) {
   return { ok: errors.length === 0, errors };
 }
 
+// ---- persistence: pure state fns ----------------------------------------
+
+function emptyState() { return { enabled: {}, recents: [] }; }
+
+function applyEnabled(state, id, on) {
+  return { ...state, enabled: { ...state.enabled, [id]: !!on } };
+}
+
+function isEnabled(state, entry, defaultOn) {
+  return Object.prototype.hasOwnProperty.call(state.enabled, entry.id)
+    ? state.enabled[entry.id]
+    : !!defaultOn;
+}
+
+function pushRecent(state, item, cap) {
+  const recents = [item, ...state.recents.filter((x) => x !== item)].slice(0, cap);
+  return { ...state, recents };
+}
+
 // ---- impure helpers (GM/DOM — only called from main) --------------------
+
+const STATE_KEY = 'loaderState';
+function loadState() {
+  try { return Object.assign(emptyState(), JSON.parse(GM_getValue(STATE_KEY, '{}'))); }
+  catch (_e) { return emptyState(); }
+}
+function saveState(state) { GM_setValue(STATE_KEY, JSON.stringify(state)); }
+
 
 function gmFetchText(url) {
   return new Promise((resolve, reject) => {
@@ -229,6 +256,7 @@ if (typeof module !== 'undefined' && module.exports) {
     computeSriToken, verifyIntegrity,
     parseRegistry, validateEntry,
     matchUrl,
+    emptyState, applyEnabled, isEnabled, pushRecent,
   };
 } else {
   main();
