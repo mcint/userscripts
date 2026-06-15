@@ -35,6 +35,46 @@ function entryCdnUrl(entry) {
   return buildCdnUrl({ repo: entry.repo, ref: entry.ref || 'main', path: entry.path });
 }
 
+function parseFreeform(input, defaults) {
+  const d = defaults || { owner: DEFAULT_OWNER, ref: 'main' };
+  const raw = String(input).trim();
+
+  // URL form
+  if (/^https?:\/\//i.test(raw)) {
+    const hashIdx = raw.indexOf('#');
+    const url = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+    const integrity = hashIdx >= 0 ? normalizeIntegrity(raw.slice(hashIdx + 1)) : null;
+    return { kind: 'url', url, integrity };
+  }
+
+  // shorthand: owner/repo/path[@ref] or repo/path[@ref] — must look path-like, single line
+  const oneLine = !/[\r\n]/.test(raw);
+  const slashParts = raw.split('/');
+  if (oneLine && slashParts.length >= 2 && !/[(){};=]/.test(slashParts[0])) {
+    let ref = d.ref;
+    let body = raw;
+    const at = raw.lastIndexOf('@');
+    if (at > 0) { ref = raw.slice(at + 1); body = raw.slice(0, at); }
+    const parts = body.split('/');
+    let owner, rest;
+    // heuristic: if first segment looks like a known owner repo pair, keep 2 as repo
+    // need >= 4 parts (owner/repo/dir/file) to confidently infer the owner from input
+    if (parts.length >= 4 && !/\./.test(parts[0]) && !/\./.test(parts[1])) {
+      owner = parts[0]; rest = parts.slice(1);
+    } else {
+      owner = d.owner; rest = parts;
+    }
+    const repoName = rest.shift();
+    const path = rest.join('/');
+    if (repoName && path) {
+      return { kind: 'ref', repo: `${owner}/${repoName}`, path, ref, integrity: null };
+    }
+  }
+
+  // otherwise: a pasted snippet
+  return { kind: 'snippet', snippet: raw };
+}
+
 function normalizeIntegrity(s) {
   if (!s) { return null; }
   const v = String(s).trim().replace(/^#/, '');
@@ -55,6 +95,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     REQUIRE_SRI, DEFAULT_OWNER, CDN_BASE,
     buildCdnUrl, entryCdnUrl,
+    parseFreeform,
     normalizeIntegrity,
   };
 } else {
