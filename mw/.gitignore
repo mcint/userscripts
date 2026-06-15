@@ -1,0 +1,4 @@
+# mwsync fetch artifacts — reproducible from mwsync.yaml via `fetch` / `merge`.
+# The repo stores the recipe (mwsync.yaml + README), not the upstream archive.
+_cache/
+*.mw

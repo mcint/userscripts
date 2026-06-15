@@ -1,10 +1,36 @@
+# mwsync registry for MediaWiki-sourced scripts in this repo.
+#
+# Tool:  robla/mwsync (fork: mcint/mwsync), v1.0  — git-like fetch/diff/push over
+#        MediaWiki pages. Single-file CLI; only dep is PyYAML.
+#        Pinned at fork commit 08dc3e7 (upstream robla/mwsync @ e5dfb37).
+#        https://github.com/mcint/mwsync  (upstream: https://github.com/robla/mwsync)
+#
+# Run (from this dir — mwsync uses CWD-relative mwsync.yaml + _cache/):
+#        uv run --with pyyaml python ~/dev-llm/mwsync/mwsync.py <cmd> ...
+#
+# Configure:  add a page →  ... add '<wiki page URL>'   (writes an entry below)
+#             api_base is the wiki's Action API endpoint (w/api.php).
+#
+# Fetch (read-only, anonymous — no auth needed):
+#        ... fetch 'MediaWiki:Gadget-popups.js' --depth 50 --with-bodies
+#        populates _cache/<page>/ (revid bodies + metadata + history.jsonl).
+#        _cache/ is gitignored on purpose — this file is the recipe, not the archive.
+#        ... merge 'MediaWiki:Gadget-popups.js'   # write working copy at upstream rev
+#
+# Auth (only for `push`, i.e. writing back to the wiki — never for fetch):
+#        export MWSYNC_MW_USER=<bot username>      # Special:BotPasswords
+#        export MWSYNC_MW_PASSWORD=<bot password>
+#        ... push 'MediaWiki:Gadget-popups.js' -m "summary"
+#
+# NOTE: mwsync rewrites this file on add/merge/push (PyYAML dump) and WILL drop
+#       these comments. README.md is the durable copy of this guidance.
 wiki:
   api_base: https://en.wikipedia.org/w/api.php
   articles:
     MediaWiki:Gadget-popups.js:
       title: MediaWiki:Gadget-popups.js
       url: https://en.wikipedia.org/wiki/MediaWiki:Gadget-popups.js
-      local: MediaWiki:Gadget-popups.js.mw
+      local: nav-popups/upstream/popups.js
       upstream_revid: 1322962085
       upstream_timestamp: '2025-11-18T21:16:49Z'
       upstream_editor: Pppery

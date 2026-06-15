@@ -16,7 +16,7 @@ script is explicit.
 | [`scripts/`](scripts/) | The real deal: installable `*.user.js` with full `==UserScript==` headers | — (this is the shippable layer) |
 | [`samples/`](samples/) | Reference scripts (mine or others') kept to learn from — *not* meant to be installed as-is | — (study material) |
 | [`memory/`](memory/) | Notes: per-site quirks, DOM selectors that break, API gotchas, decisions | — (knowledge, not code) |
-| [`mw/`](mw/) | MediaWiki-sourced scripts/gadgets, tracked with [mwsync] so each page keeps its upstream revision history (e.g. Navigation popups) | — (mirror + history) |
+| [`mw/`](mw/) | MediaWiki-sourced scripts/gadgets tracked with [mwsync] — the registry/recipe (e.g. Navigation popups); fetch bodies on demand (cache is gitignored) | — (recipe) |
 
 [mwsync]: https://github.com/mcint/mwsync
 
@@ -58,6 +58,18 @@ code when each is built):
 - **State opportunities.** Where scripts touch `localStorage` / cookies /
   `GM_setValue`, document the keys and surface them (inspect / export / reset).
   Cookies likely don't matter for most; `localStorage` + `GM_*` storage do.
+- **CDN delivery + SRI + version-tracking.** jsDelivr GitHub passthrough for
+  in-page `<script>` loading, SRI hashes for verified pins, and an in-script
+  metadata block (Tampermonkey- / PEP-723-style) that tracks upstreams and
+  suggests the diff to bump a pinned wiki `common.js` / Tampermonkey inclusion.
+  Detailed in [`mw/README.md`](mw/README.md#distribution--versioning-roadmap).
+- **On-page notification library.** Reusable, unobtrusive in-page toasts/banners
+  for scripts to report status, updates, and prompts — one shared surface rather
+  than each script reinventing `alert()`.
+- **Storage/environment probing library.** Scripts that probe and characterize
+  what an origin offers — cookies, `localStorage`, `sessionStorage`, IndexedDB,
+  `GM_*` — for capacity, context, and preference persistence. Goal: durable
+  reuse within an origin (or its primary origin).
 
 > These are intent, not yet built. Each gets a spec alongside its first commit.
 
