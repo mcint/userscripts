@@ -26,6 +26,15 @@ const REGISTRY_TTL_MS = 12 * 60 * 60 * 1000;
 
 // ---- pure helpers (filled in by later tasks) ----------------------------
 
+function buildCdnUrl({ repo, ref, path }) {
+  const p = String(path).replace(/^\/+/, '');
+  return `${CDN_BASE}/${repo}@${ref}/${p}`;
+}
+
+function entryCdnUrl(entry) {
+  return buildCdnUrl({ repo: entry.repo, ref: entry.ref || 'main', path: entry.path });
+}
+
 // ---- main (browser only) ------------------------------------------------
 function main() {
   // wired up by later tasks
@@ -35,6 +44,7 @@ function main() {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     REQUIRE_SRI, DEFAULT_OWNER, CDN_BASE,
+    buildCdnUrl, entryCdnUrl,
   };
 } else {
   main();
