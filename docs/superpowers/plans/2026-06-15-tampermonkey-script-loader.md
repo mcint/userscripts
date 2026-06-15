@@ -70,6 +70,7 @@ Pure-helper signatures (used consistently across tasks):
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
+// @grant        unsafeWindow
 // @connect      cdn.jsdelivr.net
 // @connect      raw.githubusercontent.com
 // @downloadURL  https://cdn.jsdelivr.net/gh/mcint/userscripts@main/tampermonkey/loader.user.js
@@ -918,44 +919,79 @@ async function getRegistry() {
   }
 }
 
+async function hashInput(input) {
+  const src = parseFreeform(input, { owner: DEFAULT_OWNER, ref: 'main' });
+  const text = src.kind === 'snippet' ? src.snippet
+    : await gmFetchText(src.kind === 'url' ? src.url
+      : buildCdnUrl({ repo: src.repo, ref: src.ref || 'main', path: src.path }));
+  return computeSriToken(new TextEncoder().encode(text), 'sha384');
+}
+
 function main() {
   getRegistry().then((entries) => {
     const state = loadState();
-    const due = entriesToAutoLoad(entries, state, location.href);
-    for (const e of due) {
+    // 1. auto-load matching + enabled entries
+    for (const e of entriesToAutoLoad(entries, state, location.href)) {
       loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e })
         .catch((err) => console.error('[loader]', e.id, err));
     }
-    registerMenu(entries);  // Task 12
+    // 2. console API (devtools, with args) + prompt-based menu — the minimal
+    //    interactive surface; the on-page panel is a later phase (Task 12).
+    const api = {
+      list: () => entries.map((e) => ({ id: e.id, name: e.name, repo: e.repo, path: e.path })),
+      load: (input, opts) => loadSource(parseFreeform(input, { owner: DEFAULT_OWNER, ref: 'main' }), opts),
+      loadEntry: (id) => {
+        const e = entries.find((x) => x.id === id);
+        return e ? loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e })
+          : Promise.reject(new Error('no entry ' + id));
+      },
+      hashIt: (input) => hashInput(input),
+    };
+    (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).usLoader = api;
+    GM_registerMenuCommand('usLoader: load (prompt)', () => {
+      const v = prompt('owner/repo/path@ref, URL#sri, or paste snippet');
+      if (v) { api.load(v).catch((e) => alert('load failed: ' + e.message)); }
+    });
+    GM_registerMenuCommand('usLoader: list in console', () => console.table(api.list()));
+    GM_registerMenuCommand('usLoader: hash input', async () => {
+      const v = prompt('owner/repo/path@ref or URL to hash');
+      if (v) { prompt('SRI token (copy into registry.json "integrity"):', await api.hashIt(v)); }
+    });
   });
 }
 ```
 
-Note: `Date.now()` is fine in the browser; it is only referenced inside `main`/`getRegistry`, never at require time, so Node tests are unaffected.
+Note: `Date.now()` and `unsafeWindow` are only referenced inside `main`/`getRegistry`, never at require time, so Node tests are unaffected.
 
 - [ ] **Step 4: Add to exports** — add `entriesToAutoLoad,`.
 
 - [ ] **Step 5: Run tests** — Run: `cd tampermonkey && node --test`  Expected: PASS.
 
-Note: `registerMenu` is defined in Task 12; until then, comment out its call to keep the script runnable if you smoke-test mid-stream.
+- [ ] **Step 6: Manual smoke (console-first surface)** — install the loader, open any page, devtools console: `usLoader.list()` shows entries; `usLoader.loadEntry('nav-popups')` loads on a Wikipedia page; Tampermonkey menu shows the three `usLoader:` commands. This is the minimal interactive surface — no on-page panel yet.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add tampermonkey/loader.user.js tampermonkey/test/autoload.test.js
-git commit -m "feat(tampermonkey): registry load (embedded/TTL) + auto-load orchestration"
+git commit -m "feat(tampermonkey): registry load + auto-load + console API/menu (console-first)"
 ```
 
 ---
 
-### Task 12: Picker panel UI + menu command + hash helper
+### Task 12 (LATER PHASE — defer): On-page panel UI (overlays/notifications/buttons)
+
+**Defer until after v0 ships and the console-first inclusion mechanics are proven**
+(per the console-first decision). The minimal surface — console API + prompt menu —
+ships in Task 11. This task upgrades that to a styled on-page panel; it's the
+"overlays / notifications / buttons" phase, not v0. Build it only when you want the
+in-page interactive surface; nothing else depends on it.
 
 **Files:**
-- Modify: `tampermonkey/loader.user.js`
+- Modify: `tampermonkey/loader.user.js` (add `openPicker`; add a menu item that calls it)
 
 Manual verification (DOM + GM_registerMenuCommand).
 
-- [ ] **Step 1: Implement UI** — add above `main()`:
+- [ ] **Step 1: Implement UI** — add above `main()`, and add a 4th menu item in `main` (`GM_registerMenuCommand('usLoader: open panel', () => openPicker(entries))`):
 
 ```javascript
 function el(tag, attrs, children) {
@@ -1211,7 +1247,7 @@ git commit -m "docs(tampermonkey): document embedded-registry distribution build
 ## Self-Review
 
 **Spec coverage:**
-- §1 layout → Tasks 1, 8, 13, 14. §2 loader header/invocation/config statics → Tasks 1, 11. §3 registry schema → Tasks 6, 8. §4 load+execute/integrity/hash helper → Tasks 5, 9, 12. §5 persistence (+recents cap) → Task 10. §6 static/dynamic → Tasks 11, 14, 15. §7 self-hosting headers → Tasks 1 (header), 14 (meta.js). §8 refs → Task 13. §9 scope: v0 = Tasks 1–13; v0.9 = Tasks 14–15; deferred items not scheduled (correct).
+- §1 layout → Tasks 1, 8, 13, 14. §2 loader header/invocation/config statics → Tasks 1, 11. §3 registry schema (+ date-tag refs) → Tasks 6, 8. §4 load+execute/integrity/hash helper → Tasks 5, 9, 11 (console `hashIt`). §5 persistence (+recents cap) → Task 10. §6 static/dynamic → Tasks 11, 14, 15. §7 self-hosting headers → Tasks 1 (header), 14 (meta.js). §8 refs → Task 13. §9 **console-first** scope: v0 minimal = Tasks 1–11 + 13 (console API + prompt menu, no panel); on-page panel = Task 12 (later phase, deferred); v0.9 = Tasks 14–15; signing/registry-meta roadmap not scheduled (correct).
 - Storage-size limiting (§5 future) intentionally unscheduled — `pushRecent` cap is the only bound in v0.
 - SRI *enforcement default* deferred: `REQUIRE_SRI=false` + per-load checkbox (Tasks 1, 9, 12) — matches spec.
 
@@ -1219,4 +1255,4 @@ git commit -m "docs(tampermonkey): document embedded-registry distribution build
 
 **Type consistency:** `loadSource(source, opts)`, `gmFetchText`, `buildCdnUrl`, `entryCdnUrl`, `normalizeIntegrity`, `computeSriToken`, `verifyIntegrity`, `parseRegistry`, `validateEntry`, `matchUrl`, `emptyState/applyEnabled/isEnabled/pushRecent`, `entriesToAutoLoad`, `getRegistry`, `openPicker/registerMenu` — names consistent across tasks. `EMBEDDED_REGISTRY_JSON` (build output) vs `EMBEDDED_REGISTRY` (in-loader const) used consistently.
 
-**Note:** Tasks 9 and 12 are browser-manual; if the executor is fully headless, mark them blocked for a human pass and proceed with unit-tested tasks.
+**Note:** The browser-manual steps are Task 9 (smoke), Task 11 Step 6 (console surface), and Task 12 (panel, deferred). If the executor is fully headless, mark those for a human pass and proceed with the unit-tested tasks (1–8, 10, 14, plus the pure parts of 11).

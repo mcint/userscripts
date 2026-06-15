@@ -72,7 +72,8 @@ scripts first.
 - `const REQUIRE_SRI = false;` — when `true`, the loader refuses to run anything
   without a verified integrity hash (the global counterpart to the per-entry
   checkbox in §4).
-- `const DEFAULT_OWNER = 'mcint';`
+- `const DEFAULT_OWNER = 'mcint';` — also overridable at runtime (GM storage / UI)
+  so a fork can prefer its own owner without editing source.
 - `const REGISTRY_URL = '…registry.json@main';`, `const REGISTRY_TTL_MS = …;`
 
 ## 3. Registry schema (`registry.json`)
@@ -97,7 +98,12 @@ conventions** so an entry maps cleanly onto a `==UserScript==` header and a
 ```
 
 The CDN URL is derived: `https://cdn.jsdelivr.net/gh/<repo>@<ref>/<path>`.
-`@<ref>` defaults to `main` (floats); pin a commit SHA for immutability.
+`@<ref>` defaults to `main` (floats); pin a commit SHA for immutability. Besides
+`@main` and SHAs, the **date-tag convention** `@YYYY-MM[.vv]` / `@YYYY-MM-DD[.vv]`
+(git tags) gives human, sortable update points for consumers (`vv` = same-day
+minor). Any tag string is a valid `ref` — jsDelivr resolves it; no loader change.
+Caveat: git tags are mutable/floating and can't be validated cheaply in-flight —
+integrity for a pinned tag still comes from the SRI token, not the tag itself.
 
 ## 4. Load + execute
 
@@ -168,16 +174,33 @@ mw `suggest diff-bump` roadmap.
 
 ## 9. Scope
 
-**v0 (core):** loader.user.js with self-hosting header; `registry.json` + embedded
-copy; GM_xhr fetch + execute; SRI-ready integrity (token + fragment formats, helper,
-`REQUIRE_SRI` static + per-entry checkbox); per-domain auto-load; picker panel;
-freeform URL **and** snippet; persistence; `refs/` docs.
+Interactive surface is built **console-first**, simplest → richest:
+1. **in-script config** (the `const` block) + **per-domain auto-load**,
+2. a **console API** (`usLoader.load(input, opts)`, `.loadEntry(id)`, `.list()`,
+   `.hashIt()`) callable from devtools, with args, plus prompt-based GM menu items,
+3. *later* an **on-page panel** (overlays / notifications / buttons) — the
+   styled interactive REPL.
 
-**v0.9 (still in scope):** `build.sh`, static install index, generated `*.meta.js`.
+**v0 (minimal core):** loader.user.js with self-hosting header; `registry.json`;
+GM_xhr fetch + execute; SRI-ready integrity (token format, helper, `REQUIRE_SRI`
+static + per-load flag); per-domain auto-load; freeform URL **and** snippet via the
+**console API + prompt menu**; persistence; `refs/` docs.
 
-**Deferred (YAGNI for now):** SRI *enforcement by default*; GitHub-API auto-discovery
-of scripts; the cross-repo "suggest diff-bump for wiki common.js / Tampermonkey"
-tooling (lives in the mw roadmap); storage-size limiting (§5).
+**v0.9 (still in scope):** `build.sh`, embedded registry, static install index,
+generated `*.meta.js`.
+
+**Later phase:** the on-page panel UI (overlays/notifications/buttons) — prototype
+the *inclusion* mechanics through the console first.
+
+**Roadmap (post-v0.9):**
+- **`registry.meta.json`** — registry-level metadata carrying a **signing public
+  key**; cheaper than a per-script merkle tree, embeddable as one reference.
+- **Signed `*.meta.js` as gossip-able update units** — each `*.meta.js` doubles as
+  the version/update report; sign it (age / gpg) so a relayed/"gossiped" update
+  notice is verifiable against the registry pubkey. Needs dev signing keys
+  (generate; cache/store the *public* half in-source, never the private).
+- SRI *enforcement by default*; GitHub-API auto-discovery; the cross-repo
+  "suggest diff-bump" tooling (mw roadmap); storage-size limiting (§5).
 
 ## 10. Risks / open questions
 
