@@ -5,11 +5,14 @@ userscripts from GitHub: a curated `registry.json` (auto-loaded per-domain) plus
 freeform field (URL or pasted snippet). Integrity via SRI tokens.
 
 - **Install:** open `https://cdn.jsdelivr.net/gh/mcint/userscripts@main/tampermonkey/loader.user.js`
-- **Use:** Tampermonkey menu → "Open userscripts loader"
+- **Use:** Tampermonkey menu → `usLoader: load (prompt)` (freeform load),
+  `usLoader: list in console` (show registry), `usLoader: hash input` (SRI helper).
+  All commands also available via `usLoader.*` in devtools console.
 - **Config:** edit the `const` block at the top of `loader.user.js`
   (`REQUIRE_SRI`, `DEFAULT_OWNER`, `REGISTRY_URL`, `REGISTRY_TTL_MS`).
 - **Add a script:** add an entry to `registry.json` (see the design spec for the
-  schema); use the panel's "hash it" to fill `integrity`.
+  schema); use `usLoader: hash input` (menu) or `usLoader.hashIt(url)` (console)
+  to generate the `integrity` value.
 - **Tests:** `cd tampermonkey && node --test`
 - **Phases & prior art:** see `refs/`.
 
