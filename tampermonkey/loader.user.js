@@ -4,7 +4,7 @@
 // @version      0.1.0
 // @description  Load other userscripts from GitHub: curated registry + freeform, per-domain auto-load, SRI integrity.
 // @match        *://*/*
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -414,36 +414,43 @@ function renderDock(entries) {
 
 // ---- main (browser only) ------------------------------------------------
 function main() {
-  getRegistry().then((entries) => {
-    const state = loadState();
-    // 1. auto-load matching + enabled entries
-    for (const e of entriesToAutoLoad(entries, state, location.href)) {
-      loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e })
-        .catch((err) => console.error('[loader]', e.id, err));
+  const PUBLIC = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
+  // hydrate early (document-start): object exists + is detectable; costs deferred
+  let _entries = null;
+  const ensure = () => getRegistry().then((e) => (_entries = e));
+  PUBLIC.usLoader = {
+    list: () => (_entries ? _entries.map((e) => ({ id: e.id, name: e.name, repo: e.repo, path: e.path }))
+                          : ensure().then(() => PUBLIC.usLoader.list())),
+    load: (input, opts) => loadSource(parseFreeform(input, { owner: DEFAULT_OWNER, ref: 'main' }), opts),
+    loadEntry: (id) => ensure().then((e) => activateScript(id, 'tab', e)),
+    activate: (id, opts) => ensure().then((e) => activateScript(id, (opts && opts.scope) || 'site', e)),
+    deactivate: (id) => { deactivateScript(id); return true; },
+    status: (id) => scriptStatus(id),
+    hashIt: (input) => hashInput(input),
+  };
+
+  const start = async () => {
+    const entries = await ensure();
+    const stores = browserStores();
+    // auto-load: URL match OR a saved activation (tab/site)
+    for (const e of entries) {
+      const saved = effectiveActive(readScopes(e.id, stores));
+      if (saved || (matchUrl(e.match || [], location.href) && isEnabled(loadState(), e, true))) {
+        activateScript(e.id, saved ? 'tab' : 'site', entries).catch((err) => console.error('[loader]', e.id, err));
+      }
     }
-    // 2. console API (devtools, with args) + prompt-based menu — the minimal
-    //    interactive surface; the on-page panel is a later phase (Task 12).
-    const api = {
-      list: () => entries.map((e) => ({ id: e.id, name: e.name, repo: e.repo, path: e.path })),
-      load: (input, opts) => loadSource(parseFreeform(input, { owner: DEFAULT_OWNER, ref: 'main' }), opts),
-      loadEntry: (id) => {
-        const e = entries.find((x) => x.id === id);
-        return e ? loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e })
-          : Promise.reject(new Error('no entry ' + id));
-      },
-      hashIt: (input) => hashInput(input),
-    };
-    (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).usLoader = api;
-    GM_registerMenuCommand('usLoader: load (prompt)', () => {
-      const v = prompt('owner/repo/path@ref, URL#sri, or paste snippet');
-      if (v) { api.load(v).catch((e) => alert('load failed: ' + e.message)); }
+    renderDock(entries);
+    GM_registerMenuCommand('usLoader: open dock', () => {
+      const p = document.querySelector('#us-dock .us-panel'); if (p) { p.style.display = 'block'; }
     });
-    GM_registerMenuCommand('usLoader: list in console', () => console.table(api.list()));
+    GM_registerMenuCommand('usLoader: list in console', () => console.table(PUBLIC.usLoader.list()));
     GM_registerMenuCommand('usLoader: hash input', async () => {
       const v = prompt('owner/repo/path@ref or URL to hash');
-      if (v) { prompt('SRI token (copy into registry.json "integrity"):', await api.hashIt(v)); }
+      if (v) { prompt('SRI token:', await PUBLIC.usLoader.hashIt(v)); }
     });
-  });
+  };
+  if (document.readyState === 'complete' || document.readyState === 'interactive') { start(); }
+  else { window.addEventListener('DOMContentLoaded', start); }
 }
 
 // ---- export tail: Node tests require() this; browser runs main() --------
