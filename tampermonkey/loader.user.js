@@ -127,6 +127,24 @@ function normalizeIntegrity(s) {
   return null;
 }
 
+function parseRegistry(text) {
+  const data = JSON.parse(text);
+  if (!Array.isArray(data)) { throw new Error('registry must be a JSON array'); }
+  return data;
+}
+
+function validateEntry(entry) {
+  const errors = [];
+  if (!entry.id) { errors.push('missing id'); }
+  if (!entry.name) { errors.push('missing name'); }
+  if (!entry.repo || !/^[^/]+\/[^/]+$/.test(entry.repo)) { errors.push('repo must be owner/name'); }
+  if (!entry.path) { errors.push('missing path'); }
+  if (entry.integrity != null && normalizeIntegrity(entry.integrity) == null) {
+    errors.push('integrity must be an SRI token');
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 // ---- main (browser only) ------------------------------------------------
 function main() {
   // wired up by later tasks
@@ -140,6 +158,7 @@ if (typeof module !== 'undefined' && module.exports) {
     parseFreeform,
     normalizeIntegrity,
     computeSriToken, verifyIntegrity,
+    parseRegistry, validateEntry,
   };
 } else {
   main();
