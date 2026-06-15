@@ -199,6 +199,12 @@ the *inclusion* mechanics through the console first.
   the version/update report; sign it (age / gpg) so a relayed/"gossiped" update
   notice is verifiable against the registry pubkey. Needs dev signing keys
   (generate; cache/store the *public* half in-source, never the private).
+- **Content detection** to refine matching — beyond `match` globs, detect a wiki/app
+  at runtime (e.g. MediaWiki via `mw`/`mw.config`, `<meta name="generator">`,
+  `/w/api.php`) so an entry auto-loads on *any* MediaWiki without enumerating
+  domains, and the coarse `*/wiki/*` catch-all stops false-positiving on non-MW
+  sites that happen to use a `/wiki/` path. Schema would gain an optional `detect`
+  hook; matching becomes "glob match AND (no detector OR detector passes)".
 - SRI *enforcement by default*; GitHub-API auto-discovery; the cross-repo
   "suggest diff-bump" tooling (mw roadmap); storage-size limiting (§5).
 
