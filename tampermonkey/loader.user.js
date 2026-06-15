@@ -359,12 +359,14 @@ function injectDockStyles() {
     padding:8px;min-width:240px;box-shadow:0 2px 12px rgba(0,0,0,.3)}
   #us-dock:hover .us-panel{display:block}
   #us-dock:hover .us-orb{display:none}
+  #us-dock.us-collapsed:hover .us-panel{display:none}
+  #us-dock.us-collapsed:hover .us-orb{display:flex}
   #us-dock .us-row{display:flex;align-items:center;gap:6px;margin:3px 0}
   #us-dock button{font:12px sans-serif;cursor:pointer}
   #us-dock button[disabled]{opacity:.45;cursor:default}
   .us-st-inactive{color:#999}.us-st-active{color:#1a7f37}.us-st-error{color:#cf222e}.us-st-warning{color:#bf8700}`;
   const el = document.createElement('style'); el.id = 'us-dock-style'; el.textContent = css;
-  document.head.appendChild(el);
+  (document.head || document.documentElement).appendChild(el);
 }
 
 function renderDock(entries) {
@@ -381,7 +383,13 @@ function renderDock(entries) {
   head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px';
   const title = document.createElement('strong'); title.textContent = 'userscripts';
   const close = document.createElement('button'); close.textContent = '×'; // ×
-  close.title = 'collapse'; close.onclick = () => { panel.style.display = 'none'; };
+  // Collapse via a class (not inline display) so the CSS :hover affordance still
+  // re-expands later; clear the class on mouseleave so the next hover works.
+  close.title = 'collapse';
+  close.onclick = () => {
+    dock.classList.add('us-collapsed');
+    dock.addEventListener('mouseleave', () => dock.classList.remove('us-collapsed'), { once: true });
+  };
   head.append(title, close); panel.append(head);
 
   const stores = browserStores();
