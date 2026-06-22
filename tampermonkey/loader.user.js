@@ -4,7 +4,7 @@
 // @version      0.1.0
 // @description  Load other userscripts from GitHub: curated registry + freeform, per-domain auto-load, SRI integrity.
 // @match        *://*/*
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -24,7 +24,45 @@ const CDN_BASE = 'https://cdn.jsdelivr.net/gh';
 const REGISTRY_URL = 'https://cdn.jsdelivr.net/gh/mcint/userscripts@main/tampermonkey/registry.json';
 const REGISTRY_TTL_MS = 12 * 60 * 60 * 1000;
 
-// ---- pure helpers (filled in by later tasks) ----------------------------
+// ---- pure helpers -------------------------------------------------------
+
+function effectiveActive(scopes) {
+  return !!(scopes && (scopes.tab || scopes.session || scopes.site));
+}
+
+function activationKey(id) { return 'us-loader:act:' + id; }
+
+function readScopes(id, stores) {
+  const key = activationKey(id);
+  const on = (s) => !!(s && s.getItem(key) === '1');
+  return { tab: on(stores.tab), session: false, site: on(stores.site) };
+}
+
+function writeScope(id, scope, on, stores) {
+  if (scope === 'session') { return; } // v0: lever stubbed (see decision D6)
+  const store = scope === 'tab' ? stores.tab : scope === 'site' ? stores.site : null;
+  if (!store) { return; }
+  const key = activationKey(id);
+  if (on) { store.setItem(key, '1'); } else { store.removeItem(key); }
+}
+
+function deriveStatus(rt) {
+  if (rt && rt.error) { return 'error'; }
+  if (rt && rt.warning) { return 'warning'; }
+  if (rt && rt.loaded) { return 'active'; }
+  return 'inactive';
+}
+
+function statusGlyph(status) {
+  switch (status) {
+    case 'active': return { symbol: '●', cls: 'us-st-active' };
+    case 'error': return { symbol: '●', cls: 'us-st-error' };
+    case 'warning': return { symbol: '●', cls: 'us-st-warning' };
+    default: return { symbol: '○', cls: 'us-st-inactive' };
+  }
+}
+
+// ---- legacy section label -----------------------------------------------
 
 function buildCdnUrl({ repo, ref, path }) {
   const p = String(path).replace(/^\/+/, '');
@@ -277,38 +315,150 @@ async function hashInput(input) {
   return computeSriToken(new TextEncoder().encode(text), 'sha384');
 }
 
+// ---- storage binding + activation API (browser-only; called from main) --
+
+function browserStores() {
+  return { tab: (typeof sessionStorage !== 'undefined' ? sessionStorage : null),
+           site: (typeof localStorage !== 'undefined' ? localStorage : null) };
+}
+
+// runtime status of loaded scripts this page (id -> {loaded,error,warning})
+const _runtime = {};
+
+function scriptStatus(id) { return deriveStatus(_runtime[id] || {}); }
+
+async function activateScript(id, scope, entries) {
+  writeScope(id, scope || 'site', true, browserStores());
+  const e = entries.find((x) => x.id === id);
+  if (!e) { _runtime[id] = { error: true }; return; }
+  try {
+    await loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e });
+    _runtime[id] = { loaded: true };
+  } catch (err) {
+    _runtime[id] = { error: true };
+    throw err;
+  }
+}
+
+function deactivateScript(id) {
+  const stores = browserStores();
+  writeScope(id, 'tab', false, stores);
+  writeScope(id, 'site', false, stores);
+  _runtime[id] = { loaded: false };
+}
+
+// ---- dock DOM + styles (browser-only; called from main after DOM ready) -
+
+function injectDockStyles() {
+  if (document.getElementById('us-dock-style')) { return; }
+  const css = `
+  #us-dock{position:fixed;right:14px;bottom:14px;z-index:2147483647;font:13px/1.4 sans-serif}
+  #us-dock .us-orb{width:26px;height:26px;border-radius:50%;background:#222;color:#fff;display:flex;
+    align-items:center;justify-content:center;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.4)}
+  #us-dock .us-panel{display:none;background:#fff;color:#111;border:1px solid #999;border-radius:6px;
+    padding:8px;min-width:240px;box-shadow:0 2px 12px rgba(0,0,0,.3)}
+  #us-dock:hover .us-panel{display:block}
+  #us-dock:hover .us-orb{display:none}
+  #us-dock.us-collapsed:hover .us-panel{display:none}
+  #us-dock.us-collapsed:hover .us-orb{display:flex}
+  #us-dock .us-row{display:flex;align-items:center;gap:6px;margin:3px 0}
+  #us-dock button{font:12px sans-serif;cursor:pointer}
+  #us-dock button[disabled]{opacity:.45;cursor:default}
+  .us-st-inactive{color:#999}.us-st-active{color:#1a7f37}.us-st-error{color:#cf222e}.us-st-warning{color:#bf8700}`;
+  const el = document.createElement('style'); el.id = 'us-dock-style'; el.textContent = css;
+  (document.head || document.documentElement).appendChild(el);
+}
+
+function renderDock(entries) {
+  injectDockStyles();
+  let dock = document.getElementById('us-dock');
+  if (dock) { dock.remove(); }
+  dock = document.createElement('div'); dock.id = 'us-dock';
+
+  const orb = document.createElement('div'); orb.className = 'us-orb'; orb.textContent = '⚙'; // ⚙
+  orb.title = 'userscripts';
+  const panel = document.createElement('div'); panel.className = 'us-panel';
+
+  const head = document.createElement('div');
+  head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px';
+  const title = document.createElement('strong'); title.textContent = 'userscripts';
+  const close = document.createElement('button'); close.textContent = '×'; // ×
+  // Collapse via a class (not inline display) so the CSS :hover affordance still
+  // re-expands later; clear the class on mouseleave so the next hover works.
+  close.title = 'collapse';
+  close.onclick = () => {
+    dock.classList.add('us-collapsed');
+    dock.addEventListener('mouseleave', () => dock.classList.remove('us-collapsed'), { once: true });
+  };
+  head.append(title, close); panel.append(head);
+
+  const stores = browserStores();
+  for (const e of entries) {
+    const scopes = readScopes(e.id, stores);
+    const st = deriveStatus(_runtime[e.id] || (effectiveActive(scopes) ? { loaded: true } : {}));
+    const g = statusGlyph(st);
+    const row = document.createElement('div'); row.className = 'us-row';
+    const dot = document.createElement('span'); dot.className = g.cls; dot.textContent = g.symbol;
+    const name = document.createElement('span'); name.textContent = e.name; name.style.flex = '1';
+    row.append(dot, name);
+    for (const scope of ['tab', 'session', 'site']) {
+      const b = document.createElement('button'); b.textContent = scope;
+      if (scope === 'session') { b.disabled = true; b.title = 'soon'; }
+      else {
+        if (scopes[scope]) { b.style.fontWeight = 'bold'; }
+        b.onclick = () => {
+          const cur = readScopes(e.id, stores)[scope];
+          if (cur) { writeScope(e.id, scope, false, stores); }
+          else { activateScript(e.id, scope, entries).catch((err) => console.error('[loader]', err)); }
+          renderDock(entries);
+        };
+      }
+      row.append(b);
+    }
+    panel.append(row);
+  }
+  dock.append(orb, panel); document.body.appendChild(dock);
+}
+
 // ---- main (browser only) ------------------------------------------------
 function main() {
-  getRegistry().then((entries) => {
-    const state = loadState();
-    // 1. auto-load matching + enabled entries
-    for (const e of entriesToAutoLoad(entries, state, location.href)) {
-      loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e })
-        .catch((err) => console.error('[loader]', e.id, err));
+  const PUBLIC = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
+  // hydrate early (document-start): object exists + is detectable; costs deferred
+  let _entries = null;
+  const ensure = () => getRegistry().then((e) => (_entries = e));
+  PUBLIC.usLoader = {
+    list: () => (_entries ? _entries.map((e) => ({ id: e.id, name: e.name, repo: e.repo, path: e.path }))
+                          : ensure().then(() => PUBLIC.usLoader.list())),
+    load: (input, opts) => loadSource(parseFreeform(input, { owner: DEFAULT_OWNER, ref: 'main' }), opts),
+    loadEntry: (id) => ensure().then((e) => activateScript(id, 'tab', e)),
+    activate: (id, opts) => ensure().then((e) => activateScript(id, (opts && opts.scope) || 'site', e)),
+    deactivate: (id) => { deactivateScript(id); return true; },
+    status: (id) => scriptStatus(id),
+    hashIt: (input) => hashInput(input),
+  };
+
+  const start = async () => {
+    const entries = await ensure();
+    const stores = browserStores();
+    // auto-load: URL match OR a saved activation (tab/site)
+    for (const e of entries) {
+      const saved = effectiveActive(readScopes(e.id, stores));
+      if (saved || (matchUrl(e.match || [], location.href) && isEnabled(loadState(), e, true))) {
+        activateScript(e.id, saved ? 'tab' : 'site', entries).catch((err) => console.error('[loader]', e.id, err));
+      }
     }
-    // 2. console API (devtools, with args) + prompt-based menu — the minimal
-    //    interactive surface; the on-page panel is a later phase (Task 12).
-    const api = {
-      list: () => entries.map((e) => ({ id: e.id, name: e.name, repo: e.repo, path: e.path })),
-      load: (input, opts) => loadSource(parseFreeform(input, { owner: DEFAULT_OWNER, ref: 'main' }), opts),
-      loadEntry: (id) => {
-        const e = entries.find((x) => x.id === id);
-        return e ? loadSource({ kind: 'ref', repo: e.repo, ref: e.ref || 'main', path: e.path, entry: e })
-          : Promise.reject(new Error('no entry ' + id));
-      },
-      hashIt: (input) => hashInput(input),
-    };
-    (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).usLoader = api;
-    GM_registerMenuCommand('usLoader: load (prompt)', () => {
-      const v = prompt('owner/repo/path@ref, URL#sri, or paste snippet');
-      if (v) { api.load(v).catch((e) => alert('load failed: ' + e.message)); }
+    renderDock(entries);
+    GM_registerMenuCommand('usLoader: open dock', () => {
+      const p = document.querySelector('#us-dock .us-panel'); if (p) { p.style.display = 'block'; }
     });
-    GM_registerMenuCommand('usLoader: list in console', () => console.table(api.list()));
+    GM_registerMenuCommand('usLoader: list in console', () => console.table(PUBLIC.usLoader.list()));
     GM_registerMenuCommand('usLoader: hash input', async () => {
       const v = prompt('owner/repo/path@ref or URL to hash');
-      if (v) { prompt('SRI token (copy into registry.json "integrity"):', await api.hashIt(v)); }
+      if (v) { prompt('SRI token:', await PUBLIC.usLoader.hashIt(v)); }
     });
-  });
+  };
+  if (document.readyState === 'complete' || document.readyState === 'interactive') { start(); }
+  else { window.addEventListener('DOMContentLoaded', start); }
 }
 
 // ---- export tail: Node tests require() this; browser runs main() --------
@@ -323,6 +473,7 @@ if (typeof module !== 'undefined' && module.exports) {
     matchUrl,
     emptyState, applyEnabled, isEnabled, pushRecent,
     entriesToAutoLoad,
+    effectiveActive, activationKey, readScopes, writeScope, deriveStatus, statusGlyph,
   };
 } else {
   main();

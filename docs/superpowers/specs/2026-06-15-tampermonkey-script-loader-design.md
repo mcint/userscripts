@@ -60,13 +60,31 @@ scripts first.
 // ==/UserScript==
 ```
 
-**Invocation model:**
-- On **every** page (`@match *://*/*`, `document-idle`): auto-load every registry
-  entry whose `match`/`domains` apply to the current URL — the "default domains to
-  load." Disabled entries and storage-size guards (§5) are respected.
-- **Everywhere:** a `GM_registerMenuCommand` entry opens the **picker panel** —
-  toggle catalog entries on/off, freeform-load a URL *or* a pasted snippet (§4),
-  and use the **hash helper** (§4) to compute an SRI token for the registry.
+**Invocation model (layered, lazy):**
+- **`document-start` (cheap, low-priority, interruptable):** hydrate the public
+  object `window.usLoader` (`activate(id,{scope})`, `deactivate(id)`, `status(id)`,
+  `list()`). Early presence is reassuring and **detectable** by page scripts that
+  auto-characterize userscripts. `id` = the registry slug; `list()` returns entries
+  from whichever registry is live (embedded or online) → discover then `activate`.
+  Heavy work stays **deferred** — nothing costly runs until used.
+- **Auto-load:** scripts marked active for this origin (per §5 activation levers)
+  and matching the URL load at their `runAt`.
+- **`document-idle`:** render the **dock** (§2.1, lazy) and register the
+  `GM_registerMenuCommand` entries (console-first surface: load-prompt, list,
+  hash-input).
+
+### 2.1 Dock (on-page control UI)
+
+A floating dock, collapsed by default:
+- **Collapsed:** a tiny circle with a "userscripts" glyph, **lower-right** (v0;
+  upper-right + configurable position later).
+- **Hover → expand:** shows the script list with a **× close**; each row is
+  `[status glyph] name [tab] [session] [site]`.
+  - **Status glyph** (§5): `○` inactive · `●` active/loaded · red = error ·
+    yellow = warning (loaded-with-caveats / stale / integrity-skipped).
+  - **`[tab] [session] [site]`** = the three activation levers (§5).
+- v0 renders buttons/raw rows; **later:** link tooltips, then a dropdown-rect for
+  managing multiple userscript "extensions."
 
 **Config statics** (top-of-file constants, edited in-place):
 - `const REQUIRE_SRI = false;` — when `true`, the loader refuses to run anything
@@ -130,16 +148,36 @@ integrity for a pinned tag still comes from the SRI token, not the tag itself.
    blob `<script>` — is an implementation-plan detail; v0 picks one and documents
    the page-context vs sandbox trade-off.)
 
-## 5. Persistence (`GM_setValue`)
+## 5. Persistence
 
-- `enabled` — set of entry ids the user turned on/off (overrides defaults).
-- `domainPrefs` — per-origin overrides (force-on / force-off per site).
-- `freeformRecents` — recently freeform-loaded URLs/snippets (with any hashes).
-- `registryCache` — `{ fetchedAt, etag, entries }` for the live registry; refreshed
-  past `REGISTRY_TTL_MS`, else served from cache (cuts on-demand calls).
+**Two stores, on purpose:**
+- **GM storage** (`GM_setValue`) — the loader's own internal/tamper-sensitive
+  state: `freeformRecents`, `registryCache` (`{fetchedAt, etag, entries}`,
+  refreshed past `REGISTRY_TTL_MS`), and global prefs. Isolated from the page.
+- **`localStorage`** (per-origin, page-visible) — mirrors the per-script
+  **activation signal** so sites that auto-characterize scripts can detect it.
+
+### Activation levers (per script, per origin)
+
+Three scopes, surfaced as `[tab] [session] [site]`; a script is **active** if any
+lever is on (additive; deactivate per scope). Effective state derived from:
+
+| Lever | Scope | Mechanism |
+|---|---|---|
+| **tab** | this browsing context; survives reload, dies on tab close | `sessionStorage` |
+| **session** | shared across all this origin's open tabs, ephemeral | **synthetic — OPEN** |
+| **site** | per-origin, enduring across tabs + restarts | `localStorage` |
+
+The **session** lever has no native primitive (`sessionStorage` is per-tab,
+`localStorage` is enduring); it needs a chosen mechanism (localStorage tagged with
+a session epoch + `storage`-event sync, or `BroadcastChannel`) and a definition of
+"what ends a session." **v0 ships `tab` + `site`; `[session]` renders
+disabled/"soon"** until that's decided (see decision log D6).
+
+**Status** per script ∈ `{inactive, active, error, warning}` → the §2.1 glyph.
 
 **Future (noted, not v0):** storage-size limits — cap `freeformRecents`/cached
-blob sizes and surface usage, since GM storage has quotas. Tracked for later.
+blob sizes and surface usage, since GM storage has quotas.
 
 ## 6. Static vs dynamic registry (distribution / fewer calls)
 
@@ -186,11 +224,17 @@ GM_xhr fetch + execute; SRI-ready integrity (token format, helper, `REQUIRE_SRI`
 static + per-load flag); per-domain auto-load; freeform URL **and** snippet via the
 **console API + prompt menu**; persistence; `refs/` docs.
 
-**v0.9 (still in scope):** `build.sh`, embedded registry, static install index,
+**v0 — shipped** (PR #1 + nav-popups MediaWiki match): the above + console API.
+
+**v0.9 (shipped):** `build.sh`, embedded registry, static install index,
 generated `*.meta.js`.
 
-**Later phase:** the on-page panel UI (overlays/notifications/buttons) — prototype
-the *inclusion* mechanics through the console first.
+**v1.0 — dock prototype (this increment):** the on-page **dock** (§2.1) —
+collapsed lower-right icon → hover-expand list; one `nav-popups` row with the
+**status glyph** + `[tab] [session] [site]` levers; public object hydrated at
+`document-start` (§2). Ships **`tab` + `site` activation**; **`[session]` renders
+disabled/"soon"** pending its mechanism (§5 / decision D6). Deferred within the
+dock: link-tooltips, dropdown-rect for multiple us-exts, upper-right reposition.
 
 **Roadmap (post-v0.9):**
 - **`registry.meta.json`** — registry-level metadata carrying a **signing public
